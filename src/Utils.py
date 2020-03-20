@@ -110,8 +110,7 @@ def bw_erode(im, strel):
 
 def get_arguments():
     config = configparser.ConfigParser()
-    config.read('..\\config.ini')
-    print(config)
+    config.read('../config.ini')
 
     data_path = config['INPUT_DATA']['data_path']
     sample_name = config['INPUT_DATA']['sample_name']

@@ -8,7 +8,7 @@ def main():
     prost_vol = Volume()
     print("volume has been loaded.")
     prost_vol.print_info()
-    prost_vol.visualize()
+    #prost_vol.visualize()
 
 
 if __name__ == "__main__":

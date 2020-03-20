@@ -1,9 +1,11 @@
+import os
+
 import matplotlib.pyplot as plt
 from PIL import Image
 import numpy as np
-from mayavi import mlab
 from skimage.measure import marching_cubes_lewiner
 import cv2
+import h5py
 
 from src.Utils import get_arguments, bw_on_image, find_edge
 
@@ -28,20 +30,29 @@ class Volume:
             self.__channel = self.__data.shape[3]
 
         except FileNotFoundError:
-            print(f"Could not read the file '{data_src}'. Reading images...")
-            self.__depth = args["maxd"] - args["mind"]
-            self.__height = int((args["maxr"] - args["minr"])*args["ratio"])
-            self.__width = int((args["maxc"] - args["minc"])*args["ratio"])
-            self.__channel = channel
+            print(os.path.exists(args["data_path"]))
+            if args["data_path"].endswith(".h5"):
+                file = h5py.File(args["data_path"], 'r')
+                print(file.keys())
+                #for item in file['t00000']['s00']:
+                print(file['t00000']['s00']['0']['cells'])
 
-            self.__data = np.ndarray((self.__depth, self.__height, self.__width, self.__channel), dtype=np.float32)
-            for i in range(args["mind"], args["maxd"]):
-                filename = "{}/{}/HE/{}_Z{:06d}.tif".format(args["data_path"], args["sample_name"], args["sample_name"], (i - 1) * 4 + 1)
-                im = Image.open(filename)
-                im = im.crop(box=(args["minc"],args["minr"],args["maxc"],args["maxr"]))
-                im = im.resize((self.__width, self.__height))
-                self.set_slice(i-args["mind"], im)
-                print(filename)
+                #print(file['s01']['subdivisions'])
+            else:
+                print(f"Could not read the file '{data_src}'. Reading images...")
+                self.__depth = args["maxd"] - args["mind"]
+                self.__height = int((args["maxr"] - args["minr"])*args["ratio"])
+                self.__width = int((args["maxc"] - args["minc"])*args["ratio"])
+                self.__channel = channel
+
+                self.__data = np.ndarray((self.__depth, self.__height, self.__width, self.__channel), dtype=np.float32)
+                for i in range(args["mind"], args["maxd"]):
+                    filename = "{}/{}/HE/{}_Z{:06d}.tif".format(args["data_path"], args["sample_name"], args["sample_name"], (i - 1) * 4 + 1)
+                    im = Image.open(filename)
+                    im = im.crop(box=(args["minc"],args["minr"],args["maxc"],args["maxr"]))
+                    im = im.resize((self.__width, self.__height))
+                    self.set_slice(i-args["mind"], im)
+                    print(filename)
         self.print_info()
         self.__step_size = 1
 
