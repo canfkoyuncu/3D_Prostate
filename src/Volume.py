@@ -33,9 +33,20 @@ class Volume:
             print(os.path.exists(args["data_path"]))
             if args["data_path"].endswith(".h5"):
                 file = h5py.File(args["data_path"], 'r')
-                print(file.keys())
-                #for item in file['t00000']['s00']:
-                print(file['t00000']['s00']['0']['cells'])
+                print(len(file['t00000/s00/0/cells']))
+
+                nuclei = file['t00000/s00/0/cells'][1200]
+
+                plt.imshow(nuclei)
+                plt.show()
+
+                #for the first 10 images of the eosin channel the call would be:
+                cyto = file['t00000/s01/0/cells'][1200]
+
+                plt.imshow(cyto)
+                plt.show()
+                file.close() #finally we close the file
+
 
                 #print(file['s01']['subdivisions'])
             else:
