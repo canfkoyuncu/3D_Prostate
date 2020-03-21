@@ -114,7 +114,7 @@ def get_arguments():
 
     data_path = config['INPUT_DATA']['data_path']
     sample_name = config['INPUT_DATA']['sample_name']
-    ratio = float(config['INPUT_DATA']['ratio'])
+    downsample_level = config['INPUT_DATA']['downsample_level']
     minr = int(config['INPUT_DATA']['minr'])
     maxr = int(config['INPUT_DATA']['maxr'])
     minc = int(config['INPUT_DATA']['minc'])
@@ -128,7 +128,7 @@ def get_arguments():
     args['data_path'] = data_path
     args['output_path'] = output_path
     args['sample_name'] = sample_name
-    args['ratio'] = ratio
+    args['downsample_level'] = downsample_level
     args['minr'], args['maxr'] = minr, maxr
     args['minc'], args['maxc'] = minc, maxc
     args['mind'], args['maxd'] = mind, maxd
