@@ -38,7 +38,7 @@ class Volume:
     def get_slice(self, index, nucleiFlag=True):
         if index < 0 or index >= self.get_depth():
             return None
-        elif nucleiFlag:
+        elif nucleiFlag: #s00 stores nuclei, s01 stores cytoplasm, normalized the voxels by 25. but should be checked later
             img = self.file['t00000/s00/' + args['downsample_level'] + '/cells'][index]/25.
         else:
             img = self.file['t00000/s01/' + args['downsample_level'] + '/cells'][index]/25.
@@ -78,15 +78,14 @@ class Volume:
 
     def save_video(self, filename, nucleiFlag):
         out = cv2.VideoWriter(filename, cv2.VideoWriter_fourcc('M','J','P','G'), fps=5, frameSize=(self.__width, self.__height))
-        #for i in range(0, self.get_depth(), 15):
+        offset = 5
+        #for i in range(0, self.get_depth(), offset):
         for i in range(200, 5000, 50):
             frame = self.slice_2_frame(i, nucleiFlag)
-            #frame = cv2.resize(frame, None, fx=0.4, fy=0.4)
             frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
-            #frame = np.dstack((frame, frame, frame))
-            if i%500 == 0:
+            '''if i%500 == 0:
                 print(i)
                 plt.imshow(frame)
-                plt.show()
+                plt.show()'''
             out.write(frame)
         out.release()
