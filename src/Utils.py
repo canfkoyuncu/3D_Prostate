@@ -1,14 +1,21 @@
-import configparser
-
 import numpy as np
+from scipy.spatial.qhull import ConvexHull
 from skimage import morphology
 from skimage.filters import threshold_otsu
+from skimage.measure import marching_cubes_lewiner
 from skimage.morphology import remove_small_objects, remove_small_holes
 from scipy.ndimage import distance_transform_edt, binary_erosion, binary_fill_holes
+from scipy.ndimage import label, generate_binary_structure
 
 
 stain_mtx = np.array([[0.6443186,  0.09283127, 0.63595447], [0.71667568, 0.95454569, 0.], [0.26688857, 0.28323998, 0.77172658]])
 
+neighbors3d = [[0, -1, 0], [-1, 0, 0], [0, 0, -1], [-1, -1, 0], [-1, 0, -1], [0, -1, -1], [-1, -1, -1],
+               [0, 1, 0], [1, 0, 0], [0, 0, 1], [1, 1, 0], [1, 0, 1], [0, 1, 1], [1, 1, 1],
+               [1, -1, 0], [1, -1, 1], [1, 1, -1], [1, 0, -1], [1, -1, -1], [0, -1, 1], [0, 1, -1],
+               [-1, 1, 0], [-1, 1, 1], [-1, 0, 1], [-1, -1, 1], [-1, 1, -1], [0, 0, 0]]
+
+neighbors2d = [[0, -1], [-1, 0], [-1, -1], [0, 1], [1, 0], [1, 1], [1, -1], [-1, 1]]
 
 def bw_on_image(im, bw, color):
     for i in range(0, 3):
@@ -51,7 +58,7 @@ def color_deconvolution(img):
     return A
 
 
-def threshold(im, const=-1):
+def threshold(im, const=-1, reverseFlag=False):
     if im is not None:
         if const == -1:
             thresh = otsu(im)
@@ -60,7 +67,10 @@ def threshold(im, const=-1):
                 thresh = const
             else:
                 thresh = otsu(im) * const
-        im = im > thresh
+        if reverseFlag:
+            im = im < thresh
+        else:
+            im = im >= thresh
     return im
 
 
@@ -74,10 +84,15 @@ def otsu(im):
     return thresh
 
 
-def eliminate_small_area(bw, th):
-    bw = remove_small_objects(bw, th)
-    bw = remove_small_holes(bw, th)
-    return bw
+def eliminate_small_area(bw, th, in_place=False):
+    if in_place:
+        remove_small_objects(bw, th, in_place=in_place)
+        remove_small_holes(bw, th, in_place=in_place)
+        return None
+    else:
+        bw = remove_small_objects(bw, th, in_place=in_place)
+        bw = remove_small_holes(bw, th, in_place=in_place)
+        return bw
 
 
 def bw_close(im, strel, iter=1):
@@ -108,28 +123,20 @@ def bw_erode(im, strel):
     return im[pad_length:-pad_length, pad_length:-pad_length]
 
 
-def get_arguments():
-    config = configparser.ConfigParser()
-    config.read('../config.ini')
+def create_mesh(data, spacing=(1,1,1)):
+    return marching_cubes_lewiner(data, spacing=spacing)
 
-    data_path = config['INPUT_DATA']['data_path']
-    sample_name = config['INPUT_DATA']['sample_name']
-    downsample_level = config['INPUT_DATA']['downsample_level']
-    minr = int(config['INPUT_DATA']['minr'])
-    maxr = int(config['INPUT_DATA']['maxr'])
-    minc = int(config['INPUT_DATA']['minc'])
-    maxc = int(config['INPUT_DATA']['maxc'])
-    mind = int(config['INPUT_DATA']['mind'])
-    maxd = int(config['INPUT_DATA']['maxd'])
+def convexhull_volume(data, offset=10):
+    points = np.ndarray(shape=(0,3), dtype=int)
+    for i in range(0, data.shape[0], offset):
+        for j in range(0, data.shape[1], offset):
+            for k in range(0, data.shape[2], offset):
+                if data[i][j][k] > 0:
+                    points = np.append(points, [[i,j,k]], axis=0)
+    print(points.shape)
+    hull = ConvexHull(points)
+    return hull
 
-    output_path = config['OUTPUT_PARAMS']['output_path']
 
-    args = {}
-    args['data_path'] = data_path
-    args['output_path'] = output_path
-    args['sample_name'] = sample_name
-    args['downsample_level'] = downsample_level
-    args['minr'], args['maxr'] = minr, maxr
-    args['minc'], args['maxc'] = minc, maxc
-    args['mind'], args['maxd'] = mind, maxd
-    return args
+def label_volume(data):
+    return label(data)
