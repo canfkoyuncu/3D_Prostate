@@ -1,3 +1,5 @@
+import multiprocessing
+from multiprocessing import Pool
 import cv2
 import os
 
@@ -13,44 +15,40 @@ from mpl_toolkits.mplot3d import axes3d, Axes3D
 
 from src.VolumeProcessor import eliminateObjectsOnBackground, load_volume_from_h5, load_volume_from_np
 
-matplotlib.use("Qt5Agg")
+#matplotlib.use("Qt5Agg")
 
-opt = OTLS_Options().parse()
-
-
-def main():
+def main(sample_name):
     ''' ----------- load data --------------- '''
-    datapath = os.path.join(opt.data_path, opt.sample_name, "data-f0.h5")
-    prem_nuclei_path = os.path.join(opt.prem_data_path, opt.sample_name + '_nuclei_' + opt.downsample_level)
-    prem_cyto_path = os.path.join(opt.prem_data_path, opt.sample_name + '_cyto_' + opt.downsample_level)
+    datapath = os.path.join(opt.data_path, sample_name, "data-f0.h5")
+    prem_nuclei_path = os.path.join(opt.prem_data_path, sample_name + '_nuclei_' + opt.downsample_level)
+    prem_cyto_path = os.path.join(opt.prem_data_path, sample_name + '_cyto_' + opt.downsample_level)
 
     nuclei_vol = load_volume_from_h5(datapath, opt.downsample_level, True, prem_nuclei_path)
     print("Nuclei data has been loaded.")
-    nuclei_vol.normalize()
 
-    nuclei_bw = load_volume_from_h5(datapath, opt.downsample_level, True, prem_nuclei_path)
-    nuclei_bw.binarize(1.2)
+    nuclei_bw = nuclei_vol.binarize(1.2, inplace=False)
+    print("Nuclei mask has been loaded.")
 
     tissue_vol = load_volume_from_h5(datapath, opt.downsample_level, False, prem_cyto_path)
     print("Tissue data has been loaded.")
 
     tissue_mask = tissue_vol.binarize(inplace=False)
     tissue_mask.get_convexhull()
+    print("Tissue mask has been loaded.")
 
-    tissue_slic = tissue_vol.normalize(False)
-    tissue_slic.slic(100000, 10, True)
-    tissue_slic.save_volume(prem_cyto_path+'slic100000_10')
-    #tissue_slic = load_volume_from_np(prem_cyto_path+'slic100000_10')
+    tissue_slic = tissue_vol.normalize(inplace=False)
+    tissue_slic.slic(opt.slic_no, opt.slic_compactness)
+    tissue_slic.save_volume(prem_cyto_path+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness))
+    #tissue_slic = load_volume_from_np(prem_cyto_path+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness))
     print("Tissue slic data has been loaded.")
-
-    glandular_region = tissue_vol.binarize(th=1., bgFlag=True, inplace=False)
+    glandular_region = tissue_vol.binarize(bgFlag=True, inplace=False)
     print("Gland data has been loaded.")
     eliminateObjectsOnBackground(tissue_slic, tissue_mask)
     print('Non tissue regions eliminated')
     eliminateObjectsOnBackground(tissue_slic, glandular_region)
     print('Cyto tissue regions eliminated')
-    tissue_slic.save_volume(prem_cyto_path+'slic100000_10_processed')
-    tissue_slic = load_volume_from_np(prem_cyto_path+'slic100000_10_processed')
+    tissue_slic.save_volume(prem_cyto_path+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_processed')
+    #tissue_slic = load_volume_from_np(prem_cyto_path+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_processed')
 
     '''nuclei_bw.remove_small_objects(100)
     mind, maxd=0, 2500
@@ -61,12 +59,10 @@ def main():
     #nuclei_bw.visualize(minr=minr, maxr=maxr, minc=minc, maxc=maxc, mind=mind, maxd=maxd, showFlag=True, color=(0,1,0),transparent=True)
     return'''
 
-    segments = tissue_slic.get_volume()
-    print(np.max(segments))
+    nuclei_vol.normalize()
+    print(tissue_slic.max_label())
     tissue_vol.normalize()
-
-    #black = np.zeros((nuclei_bw.get_height(), nuclei_bw.get_width()), dtype=np.uint8)
-    out = cv2.VideoWriter('../output/' + opt.sample_name + '.avi', cv2.VideoWriter_fourcc('M','J','P','G'), fps=5, frameSize=(nuclei_vol.get_width()*2, nuclei_vol.get_height()))
+    out = cv2.VideoWriter(os.path.join(opt.output_path, sample_name+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+ '.avi'), cv2.VideoWriter_fourcc('M','J','P','G'), fps=5, frameSize=(nuclei_vol.get_width()*2, nuclei_vol.get_height()))
     for i in range(0, nuclei_vol.get_depth(), 2):
         cyt = tissue_vol.get_slice(i)
         cyt = np.dstack((cyt, cyt, cyt)).astype(np.uint8)
@@ -90,8 +86,8 @@ def main():
 
         for r in range(1, tissue_slic.get_height()-1):
             for c in range(1, tissue_slic.get_width()-1):
-                l = segments[r, c, i]
-                if l != segments[r,c-1,i] or l != segments[r,c+1,i] or l != segments[r-1,c,i] or l != segments[r+1,c,i]:
+                l = tissue_slic.get_voxel(r, c, i)
+                if l != tissue_slic.get_voxel(r,c-1,i) or l != tissue_slic.get_voxel(r,c+1,i) or l != tissue_slic.get_voxel(r-1,c,i) or l != tissue_slic.get_voxel(r+1,c,i):
                     img[r,c,0] = 0
                     img[r,c,1] = 255
                     img[r,c,2] = 0
@@ -107,4 +103,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    opt = OTLS_Options().parse()
+    sample_names = opt.sample_names.split(',')
+    pool = Pool()
+    pool.map(main, sample_names)
+    pool.close()
+    pool.join()
+
