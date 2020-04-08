@@ -68,9 +68,9 @@ def threshold(im, const=-1, reverseFlag=False):
             else:
                 thresh = otsu(im) * const
         if reverseFlag:
-            im = im < thresh
+            im = im <= thresh
         else:
-            im = im >= thresh
+            im = im > thresh
     return im
 
 
@@ -87,7 +87,7 @@ def otsu(im):
 def eliminate_small_area(bw, th, in_place=False):
     if in_place:
         remove_small_objects(bw, th, in_place=in_place)
-        remove_small_holes(bw, th, in_place=in_place)
+        # remove_small_holes(bw, th, in_place=in_place) #this function always returns bool array
         return None
     else:
         bw = remove_small_objects(bw, th, in_place=in_place)

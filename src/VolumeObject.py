@@ -171,7 +171,8 @@ class Volume:
     def label(self, inplace=True):
         if inplace:
             self.__volume, label = label_volume(self.__volume)
-            print("Labeled image: ", label)
+            self.set_type(np.int)
+            print("Labeled image: ", label, self.__volume.dtype)
         else:
             volume = Volume(self.__volume.copy())
             volume.label(True)

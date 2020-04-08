@@ -1,10 +1,26 @@
 import numpy as np
 import os
 import h5py
+import subprocess
+from mayavi import mlab
 from scipy.ndimage import labeled_comprehension
 from skimage.measure import regionprops
 
 from src.VolumeObject import Volume
+
+
+def get_volume_fts(objects):
+    step = 1
+    fts = np.zeros((objects.max_label()+1, 1), dtype=np.float)
+    for i in range(0, objects.get_height(), step):
+        for j in range(0, objects.get_width(), step):
+            for k in range(0, objects.get_depth(), step):
+                label = objects.get_voxel(i,j,k)
+                if label > 0:
+                    fts[label] += 1
+
+    fts = np.array(fts)
+    return fts[np.nonzero(fts)]
 
 
 def eliminateObjectsOnBackground(objects, tissue):
@@ -39,9 +55,6 @@ def eliminateObjectsOnBackground(objects, tissue):
                     objects.set_voxel(i,j,k,0.)
 
 
-
-
-
 def load_volume_from_h5(filename, downsample_level, isNuclei, outname):
         if os.path.exists(outname + '.npy'):
             print("File exists. Loading..")
@@ -70,4 +83,40 @@ def load_volume_from_h5(filename, downsample_level, isNuclei, outname):
 
 def load_volume_from_np(filename):
     return Volume(np.load(filename+'.npy'))
+
+
+def save_volume_rendering_as_gif(outpath, sample_name, fps=20):
+    padding = 5
+    '''@mlab.animate()
+    def anim():
+        flag = 10
+        for i in range(1,720,1):
+            print("view: {}\nroll: {}".format(mlab.view(), mlab.roll()))
+            if i%50 == 0:
+                flag *= -1
+            mlab.move(forward=flag, right=1, up=flag)
+            mlab.view(i, elevation=i)
+            mlab.show()
+            # create zeros for padding index positions for organization
+            zeros = '0'*(padding - len(str(i)))
+
+            # concate filename with zero padded index number as suffix
+            filename = os.path.join(outpath, '{}_{}{}{}'.format(sample_name, zeros, i, '.png'))
+
+            mlab.savefig(filename=filename)
+
+            yield
+
+    mlab.view(1, elevation=1)
+    f = mlab.gcf()
+    f.scene.movie_maker.record = True
+    anim()
+    mlab.show()'''
+
+    ffmpeg_fname = os.path.join(outpath, '{}_%0{}d{}'.format(sample_name, padding, '.png'))
+    cmd = 'ffmpeg -f image2 -r {} -i {} -vcodec gif -y {}.gif'.format(fps,
+                                                                        ffmpeg_fname,
+                                                                        sample_name)
+    print(cmd)
+    subprocess.check_output(['bash','-c', cmd])
 
