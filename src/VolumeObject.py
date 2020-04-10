@@ -203,3 +203,53 @@ class Volume:
             volume = Volume(self.__volume.copy())
             volume.morph_closing(structure, iterations, True)
             return volume
+
+    def median_filter(self, size=None, inplace=True):
+        if inplace:
+            ndimage.filters.median_filter(self.__volume, size=size, output=self.__volume)
+        else:
+            volume = Volume(self.__volume)
+            volume.median_filter(size, True)
+            return volume
+
+    def remove_thin_objects(self, th):
+        max_label = self.max_label()
+        start_end_h = np.ones((max_label+1, 2))*-1
+        start_end_w = np.ones((max_label+1, 2))*-1
+        start_end_d = np.ones((max_label+1, 2))*-1
+        for i in range(0, self.get_height()):
+            for j in range(0, self.get_width()):
+                for k in range(0, self.get_depth()):
+                    label = self.get_voxel(i,j,k)
+                    if label > 0:
+                        if start_end_h[label, 0] == -1 or start_end_h[label, 0] > i:
+                            start_end_h[label, 0] = i
+                        if start_end_h[label, 1] == -1 or start_end_h[label, 1] < i:
+                            start_end_h[label, 1] = i
+
+                        if start_end_w[label, 0] == -1 or start_end_w[label, 0] > j:
+                            start_end_w[label, 0] = j
+                        if start_end_w[label, 1] == -1 or start_end_w[label, 1] < j:
+                            start_end_w[label, 1] = j
+
+                        if start_end_d[label, 0] == -1 or start_end_d[label, 0] > k:
+                            start_end_d[label, 0] = k
+                        if start_end_d[label, 1] == -1 or start_end_d[label, 1] < k:
+                            start_end_d[label, 1] = k
+
+        elim_indices = np.zeros((max_label+1, 1))
+        for i in range(1, max_label+1):
+            if start_end_w[i, 0] != -1 and (start_end_w[i, 1] - start_end_w[i, 0]) < th:
+                elim_indices[i] = 1
+            elif start_end_h[i, 0] != -1 and (start_end_h[i, 1] - start_end_h[i, 0]) < th:
+                elim_indices[i] = 1
+            elif start_end_d[i, 0] != -1 and (start_end_d[i, 1] - start_end_d[i, 0]) < th:
+                elim_indices[i] = 1
+
+        for i in range(0, self.get_height()):
+            for j in range(0, self.get_width()):
+                for k in range(0, self.get_depth()):
+                    label = self.get_voxel(i,j,k)
+                    if label > 0 and elim_indices[label] == 1:
+                        self.set_voxel(i,j,k,0)
+

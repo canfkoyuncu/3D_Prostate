@@ -3,8 +3,18 @@ import os
 import h5py
 import subprocess
 from mayavi import mlab
-from scipy.ndimage import labeled_comprehension
+from scipy import ndimage
 from skimage.measure import regionprops
+from skimage.morphology import remove_small_holes
+
+neighbors2d = [[0, -1], [-1, 0], [-1, -1], [0, 1], [1, 0], [1, 1], [1, -1], [-1, 1]]
+
+
+neighbors3d = [[0, -1, 0], [-1, 0, 0], [0, 0, -1], [-1, -1, 0], [-1, 0, -1], [0, -1, -1], [-1, -1, -1],
+               [0, 1, 0], [1, 0, 0], [0, 0, 1], [1, 1, 0], [1, 0, 1], [0, 1, 1], [1, 1, 1],
+               [1, -1, 0], [1, -1, 1], [1, 1, -1], [1, 0, -1], [1, -1, -1], [0, -1, 1], [0, 1, -1],
+               [-1, 1, 0], [-1, 1, 1], [-1, 0, 1], [-1, -1, 1], [-1, 1, -1], [0, 0, 0]]
+
 
 from src.VolumeObject import Volume
 
@@ -23,7 +33,7 @@ def get_volume_fts(objects):
     return fts[np.nonzero(fts)]
 
 
-def eliminateObjectsOnBackground(objects, tissue):
+def eliminate_objects_in_background(objects, tissue):
     step = 2
     onTissueVoxels = np.zeros((objects.max_label()+1, 1), dtype=np.float)
     volumes = np.zeros_like(onTissueVoxels)
@@ -120,3 +130,87 @@ def save_volume_rendering_as_gif(outpath, sample_name, fps=20):
     print(cmd)
     subprocess.check_output(['bash','-c', cmd])
 
+
+import matplotlib.pyplot as plt
+def eliminate_objects_cell_surrounding(objects, cells, th=0.50):
+    dist_th = 5
+    if objects.max_label() == 0:
+        return
+    for k in range(0, objects.get_depth()):
+        sl_object = objects.get_slice(k) #assume objects has binary volume
+        sl_object, n = ndimage.label(sl_object)
+        if n == 0:
+            continue
+        sl_cells = cells.get_slice(k)
+        dist = ndimage.morphology.distance_transform_edt(sl_cells==0)
+        objectDists = np.zeros((n+1, 1), dtype=np.float)
+        cnts = np.zeros((n+1, 1), dtype=np.float)
+        for i in range(1, objects.get_height()-1):
+            for j in range(1, objects.get_width()-1):
+                label = sl_object[i,j]
+                if label > 0:
+                    onBorder = False
+                    for d in neighbors2d:
+                        i2 = i + d[0]
+                        j2 = j + d[1]
+                        if sl_object[i2,j2] != label:
+                            onBorder = True
+                            break
+
+                    if onBorder:
+                        if dist[i,j] < dist_th:
+                            objectDists[label] += 1
+                        cnts[label] += 1
+
+        for i, j in enumerate(objectDists):
+            if cnts[i] > 0 and j / cnts[i] < th:
+                sl_object[sl_object==i] = 0
+
+        objects.set_slice(k, sl_object)
+
+def eliminate_objects_cell_surrounding2(objects, cells, th=0.25):
+    dist_th = 5
+    offset=2
+    cells_v = cells.get_volume()==0
+    objectDists = np.zeros((objects.max_label()+1, 1), dtype=np.float)
+    cnts = np.zeros((objects.max_label()+1, 1), dtype=np.float)
+    dist = ndimage.morphology.distance_transform_edt(cells_v)
+    for i in range(1, objects.get_height()-1, offset):
+        for j in range(1, objects.get_width()-1, offset):
+            for k in range(1, objects.get_depth()-1, offset):
+                label = objects.get_voxel(i,j,k)
+                if label > 0:
+                    onBorder = False
+                    minDist = np.Inf
+                    for d in neighbors3d:
+                        i2 = i + d[0]
+                        j2 = j + d[1]
+                        k2 = k + d[2]
+                        if objects.get_voxel(i2,j2,k2) != label:
+                            onBorder = True
+                            if minDist > dist[i,j,k]:
+                                minDist = dist[i,j,k]
+
+                    if onBorder:
+                        if minDist < dist_th:
+                            objectDists[label] += 1
+                        cnts[label] += 1
+
+    for i in range(1, objects.get_height()-1):
+        for j in range(1, objects.get_width()-1):
+            for k in range(1, objects.get_depth()-1):
+                label = objects.get_voxel(i,j,k)
+                if label > 0 and objectDists[label] / cnts[label] < th:
+                     objects.set_voxel(i,j,k, 0)
+
+
+def regions_surrounded_cells(objects, cells):
+    if cells.max_label() == 0:
+        return
+    for k in range(0, cells.get_depth()):
+        sl_cells = cells.get_slice(k)
+        sl_cells = np.bitwise_xor(sl_cells, remove_small_holes(sl_cells, 10000000))
+
+        sl_objects = objects.get_slice(k)
+        sl_objects[sl_cells] = 1
+        objects.set_slice(k, sl_objects)

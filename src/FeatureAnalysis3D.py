@@ -8,9 +8,10 @@ import matplotlib.pyplot as plt
 
 def extractVolumeFt4OneSample(datapath):
     tissue_slic = load_volume_from_np(datapath)
-    tissue_slic.binarize(1)
+    tissue_slic.binarize(0)
     tissue_slic.label()
     tissue_slic.remove_small_objects(250)
+    tissue_slic.remove_thin_objects(5)
     vols = get_volume_fts(tissue_slic)
     return vols
 
