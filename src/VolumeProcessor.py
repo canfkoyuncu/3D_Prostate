@@ -62,7 +62,7 @@ def eliminate_objects_in_background(objects, tissue):
             for k in range(0, objects.get_depth()):
                 label = objects.get_voxel(i,j,k)
                 if label > 0 and onTissueVoxels[label] / volumes[label] < 0.5:
-                    objects.set_voxel(i,j,k,0.)
+                    objects.set_voxel(i,j,k,0)
 
 
 def load_volume_from_h5(filename, downsample_level, isNuclei, outname):
@@ -88,11 +88,13 @@ def load_volume_from_h5(filename, downsample_level, isNuclei, outname):
 
             np.save(outname + '.npy', volume)
 
+        volume = volume[:, :, 0:1500]
         return Volume(volume)
 
 
 def load_volume_from_np(filename):
-    return Volume(np.load(filename+'.npy'))
+    volume = np.load(filename+'.npy')[:,:,0:1500]
+    return Volume(volume)
 
 
 def save_volume_rendering_as_gif(outpath, sample_name, fps=20):
@@ -137,8 +139,10 @@ def eliminate_objects_cell_surrounding(objects, cells, th=0.50):
     if objects.max_label() == 0:
         return
     for k in range(0, objects.get_depth()):
+    #for k in [254]:
         sl_object = objects.get_slice(k) #assume objects has binary volume
         sl_object, n = ndimage.label(sl_object)
+        #print("Max label", n)
         if n == 0:
             continue
         sl_cells = cells.get_slice(k)
@@ -167,6 +171,10 @@ def eliminate_objects_cell_surrounding(objects, cells, th=0.50):
                 sl_object[sl_object==i] = 0
 
         objects.set_slice(k, sl_object)
+
+
+    #return objectDists, cnts
+
 
 def eliminate_objects_cell_surrounding2(objects, cells, th=0.25):
     dist_th = 5
@@ -204,13 +212,43 @@ def eliminate_objects_cell_surrounding2(objects, cells, th=0.25):
                      objects.set_voxel(i,j,k, 0)
 
 
-def regions_surrounded_cells(objects, cells):
+def get_regions_surrounded_by_cells(objects, cells):
     if cells.max_label() == 0:
         return
     for k in range(0, cells.get_depth()):
         sl_cells = cells.get_slice(k)
-        sl_cells = np.bitwise_xor(sl_cells, remove_small_holes(sl_cells, 10000000))
+        sl_cells = np.bitwise_xor(sl_cells, remove_small_holes(sl_cells, cells.get_width()*cells.get_height()*0.25))
 
         sl_objects = objects.get_slice(k)
         sl_objects[sl_cells] = 1
         objects.set_slice(k, sl_objects)
+
+
+def remove_background(objects, tissue):
+    objects_v = objects.get_volume()
+    tissue_v = tissue.get_volume()
+    objects_v[tissue_v==0] = 0
+
+
+def sum_volumes(objects, cells):
+    objects_v = objects.get_volume()
+    cells_v = cells.get_volume()
+    objects_v[cells_v>0] = 1
+
+
+def add_touching_cells(objects, cells):
+    offset = 2
+    cells.label()
+    touchingCells = np.zeros((cells.max_label()+1, 1), dtype=np.int)
+    for i in range(0, objects.get_height(), offset):
+        for j in range(0, objects.get_width(), offset):
+            for k in range(0, objects.get_depth(), offset):
+                if objects.get_voxel(i,j,k) > 0 and cells.get_voxel(i,j,k) > 0:
+                    touchingCells[cells.get_voxel(i,j,k)] += 1
+
+    for i in range(0, cells.get_height()):
+        for j in range(0, cells.get_width()):
+            for k in range(0, cells.get_depth()):
+                labelc = cells.get_voxel(i,j,k)
+                if touchingCells[labelc] > 10:
+                    objects.set_voxel(i,j,k,1)

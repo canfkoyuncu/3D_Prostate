@@ -7,13 +7,13 @@ import scipy
 from mayavi import mlab
 from scipy import ndimage
 import numpy as np
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import distance_transform_edt, label
 from scipy.spatial.qhull import Delaunay
 from skimage import segmentation
 from skimage.measure import marching_cubes_lewiner
 from skimage.morphology import local_maxima, convex_hull_image, convex_hull_object
 
-from src.Utils import threshold, eliminate_small_area, convexhull_volume, label_volume
+from src.Utils import threshold, eliminate_small_area, convexhull_volume, eliminate_small_holes
 
 
 class Volume:
@@ -23,10 +23,10 @@ class Volume:
         self.__width = self.__volume.shape[1]
         self.__depth = self.__volume.shape[2]
         self.print_info()
-        print(np.max(self.__volume), np.min(self.__volume), self.__volume.dtype)
 
     def print_info(self):
         print(f'{self.__width}, {self.__height}, {self.__depth}')
+        print(np.max(self.__volume), np.min(self.__volume), self.__volume.dtype)
 
     def check_slice_index(self, index):
         if 0 <= index < self.__depth:
@@ -51,6 +51,10 @@ class Volume:
             img = self.__volume[:,:,index]
         return img
 
+    def get_slices(self, indices):
+        img = self.__volume[:,:,indices]
+        return img
+
     def set_slice(self, index, slice):
         if self.get_depth() > index >= 0:
             self.__volume[:,:,index] = slice
@@ -65,6 +69,12 @@ class Volume:
         img = self.get_slice(slice_index).astype(np.uint8)
         img = cv2.putText(img=img, text=f"{slice_index}", org=(25, 25), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=2, color=(255,0,0), thickness=2)
         return img
+
+    def set_volume(self, volume):
+        self.__volume = volume
+        self.__height = self.__volume.shape[0]
+        self.__width = self.__volume.shape[1]
+        self.__depth = self.__volume.shape[2]
 
     def save_video(self, filename):
         out = cv2.VideoWriter(filename, cv2.VideoWriter_fourcc('M','J','P','G'), fps=5, frameSize=(self.__width, self.__height))
@@ -92,12 +102,24 @@ class Volume:
     def set_voxel(self, i, j, k, val):
         self.__volume[i][j][k] = val
 
-    def binarize(self, th=-1, bgFlag=False, inplace=True):
+    def binarize(self, th=-1, threshold_func='Otsu', bgFlag=False, inplace=True):
         if inplace:
-            self.__volume = threshold(self.__volume, th, bgFlag)
+            self.__volume = threshold(self.__volume, th, bgFlag, threshold_func=threshold_func)
+            self.__volume = self.__volume.astype(np.bool)
         else:
             volume = Volume(self.__volume.copy())
-            volume.binarize(th, bgFlag, inplace=True)
+            volume.binarize(th, threshold_func=threshold_func, bgFlag=bgFlag, inplace=True)
+            return volume
+
+    def binarizeSliceBySlice(self, th=-1, threshold_func='Otsu', bgFlag=False, inplace=True):
+        if inplace:
+            volume = self.__volume.astype(np.bool)
+            for i in range(0, self.__depth):
+                volume[:,:,i] = threshold(self.__volume[:,:,i], th, bgFlag, threshold_func=threshold_func)
+            self.__volume = volume
+        else:
+            volume = Volume(self.__volume.copy())
+            volume.binarizeSliceBySlice(th, threshold_func=threshold_func, bgFlag=bgFlag, inplace=True)
             return volume
 
     def remove_small_objects(self, volTh, inplace=True):
@@ -106,6 +128,14 @@ class Volume:
         else:
             volume = Volume(self.__volume.copy())
             volume.remove_small_objects(volTh, True)
+            return volume
+
+    def remove_small_holes(self, inplace=True):
+        if inplace:
+            eliminate_small_holes(self.__volume, in_place=True)
+        else:
+            volume = Volume(self.__volume.copy())
+            volume.remove_small_holes(inplace=True)
             return volume
 
     def resize(self, scales, inplace=True):
@@ -148,10 +178,10 @@ class Volume:
             #self.__volume[out_idx] = 1
             for i in range(0, self.get_depth()):
                 slice = self.get_slice(i)
-                self.set_slice(i, convex_hull_object(slice))
+                self.set_slice(i, convex_hull_image(slice))
         else:
-            volume = Volume(self.__volume.copy())
-            volume.get_volume(True)
+            volume = self.copy()
+            volume.get_convexhull(True)
             return volume
 
     def visualize(self, minr=-1, maxr=-1, minc=-1, maxc=-1, mind=-1, maxd=-1, color=(1,0,0), spacing=(1,1,1), showFlag=True, transparent=False):
@@ -170,9 +200,9 @@ class Volume:
 
     def label(self, inplace=True):
         if inplace:
-            self.__volume, label = label_volume(self.__volume)
+            self.__volume, n = label(self.__volume)
             self.set_type(np.int)
-            print("Labeled image: ", label, self.__volume.dtype)
+            print("Labeled image: ", n, self.__volume.dtype)
         else:
             volume = Volume(self.__volume.copy())
             volume.label(True)
@@ -253,3 +283,9 @@ class Volume:
                     if label > 0 and elim_indices[label] == 1:
                         self.set_voxel(i,j,k,0)
 
+    def relabel(self):
+        self.binarize(0)
+        self.label()
+
+    def copy(self):
+        return Volume(self.__volume.copy())

@@ -1,82 +1,106 @@
 import multiprocessing
+import skimage
 from multiprocessing import Pool
 import cv2
 import os
 
 import matplotlib
 import numpy as np
-
+from skimage.filters import try_all_threshold
 
 from src.OTLS_Options import OTLS_Options
-from src.Utils import bw_on_image, find_edge
+from src.Utils import bw_on_image, find_edge, label_on_image, kmeansOTLS_slices, print_label_on_image, \
+    calculate_threshold_automatically, threshold
 import matplotlib.pyplot as plt
 
 from mpl_toolkits.mplot3d import axes3d, Axes3D
 
 from src.VolumeProcessor import eliminate_objects_in_background, load_volume_from_h5, load_volume_from_np, \
-    save_volume_rendering_as_gif, eliminate_objects_cell_surrounding, regions_surrounded_cells
+    save_volume_rendering_as_gif, eliminate_objects_cell_surrounding, get_regions_surrounded_by_cells, remove_background, \
+    sum_volumes, add_touching_cells
 
 
 #matplotlib.use("Qt5Agg")
 
+#tissue_slic.binarize(0)
+#subtract_volumes(tissue_slic, nuclei_bw)
+
 def main(sample_name):
     ''' ----------- load data --------------- '''
     datapath = os.path.join(opt.data_path, sample_name, "data-f0.h5")
-    prem_nuclei_path = os.path.join(opt.prem_data_path, sample_name + '_nuclei_' + opt.downsample_level)
-    prem_cyto_path = os.path.join(opt.prem_data_path, sample_name + '_cyto_' + opt.downsample_level)
 
-    nuclei_vol = load_volume_from_h5(datapath, opt.downsample_level, True, prem_nuclei_path)
+    nuclei_vol = load_volume_from_h5(datapath, opt.downsample_level, True, os.path.join(opt.output_path, sample_name + '_nuclei_' + opt.downsample_level))
     print("Nuclei data has been loaded.")
 
-    nuclei_bw = nuclei_vol.binarize(0.9, inplace=False)
-    print("Nuclei mask has been loaded.")
-
-    tissue_vol = load_volume_from_h5(datapath, opt.downsample_level, False, prem_cyto_path)
+    tissue_vol = load_volume_from_h5(datapath, opt.downsample_level, False, os.path.join(opt.output_path, sample_name + '_cyto_' + opt.downsample_level))
     print("Tissue data has been loaded.")
+    nuclei_vol.normalize()
+    tissue_vol.normalize()
 
-    tissue_mask = nuclei_vol.binarize(inplace=False)
-    tissue_mask.get_convexhull()
-    print("Tissue mask has been loaded.")
+    nuclei_bw = nuclei_vol.binarizeSliceBySlice(threshold_func='Otsu', inplace=False)
+    nuclei_bw.label()
+    nuclei_bw.remove_small_objects(2000)
+    nuclei_bw.binarize(0)
 
-    #tissue_slic = tissue_vol.normalize(inplace=False)
-    #tissue_slic.slic(opt.slic_no, opt.slic_compactness)
-    #tissue_slic.save_volume(prem_cyto_path+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness))
-    #tissue_slic = load_volume_from_np(prem_cyto_path+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness))
+    tissue_mask = nuclei_bw.get_convexhull(inplace=False)
+    tissue_mask.save_volume(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'_CHull'))
+    tissue_mask = load_volume_from_np(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'_CHull'))
+    print("Tissue mask data has been loaded.")
+
+    tissue_slic = tissue_vol.copy()
+    tissue_slic.slic(opt.slic_no, opt.slic_compactness)
+    tissue_slic.save_volume(os.path.join(opt.output_path, sample_name+'_'+opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)))
+    tissue_slic = load_volume_from_np(os.path.join(opt.output_path, sample_name+'_'+opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)))
     print("Tissue slic data has been loaded.")
 
-    '''glandular_region = tissue_vol.binarize(th=1.2, bgFlag=True, inplace=False)
+    glandular_region = tissue_vol.binarizeSliceBySlice(th=0.8, bgFlag=True, threshold_func='Otsu', inplace=False)
+    remove_background(glandular_region, tissue_mask)
     print("Gland data has been loaded.")
-    eliminate_objects_in_background(tissue_slic, tissue_mask)
-    print('Non tissue regions eliminated')
-    eliminate_objects_in_background(tissue_slic, glandular_region)
-    print('Cyto tissue regions eliminated')
-    tissue_slic.save_volume(os.path.join(opt.output_path, sample_name + '_cyto_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_processed'))'''
-    tissue_slic = load_volume_from_np(os.path.join(opt.output_path, sample_name + '_cyto_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_processed'))
 
-    nuclei_bw.remove_small_objects(50)
-    tissue_slic.binarize(0)
-    eliminate_objects_cell_surrounding(tissue_slic, nuclei_bw, th=0.25)
-    regions_surrounded_cells(tissue_slic, nuclei_bw)
-    tissue_slic.median_filter((5,5,5))
-    tissue_slic.remove_small_objects(250)
-    tissue_slic.label()
-    tissue_slic.remove_thin_objects(5)
-    tissue_slic.save_volume(os.path.join(opt.output_path, sample_name + '_cyto_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_processed2'))
-    #tissue_slic = load_volume_from_np(os.path.join(opt.output_path, sample_name + '_cyto_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_processed2'))
+    #eliminate_objects_in_background(tissue_slic, glandular_region)
+    #tissue_slic.save_volume(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_Glands'))
+    #tissue_slic = load_volume_from_np(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_Glands'))
+    #print('Cyto tissue regions eliminated')
 
+    #eliminate_objects_cell_surrounding(tissue_slic, nuclei_bw, th=0.5)
+    #tissue_slic.save_volume(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_Glands2'))
+    #tissue_slic = load_volume_from_np(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_Glands2'))
+    #print('Non-glandular regions eliminated')
 
-    '''nuclei_bw.remove_small_objects(100)'''
-    mind, maxd, minr, maxr, minc, maxc=1000, 1500, 50, 150, 50, 150
-    tissue_slic.visualize(minr=minr, maxr=maxr, minc=minc, maxc=maxc, mind=mind, maxd=maxd, showFlag=False)
-    nuclei_bw.visualize(minr=minr, maxr=maxr, minc=minc, maxc=maxc, mind=mind, maxd=maxd, showFlag=True, color=(0,1,0),transparent=True)
+    #tissue_slic.median_filter((1,1,5))
+    #add_touching_cells(tissue_slic, nuclei_bw)
+
+    for i in [100, 250, 500, 1000, 1250, 2000, 2500]:
+        fig, axis = plt.subplots(nrows=2, ncols=2)
+
+        cyt = tissue_vol.get_slice(i)
+        nuclei = nuclei_vol.get_slice(i)
+        res = np.dstack((nuclei, cyt, nuclei)).astype(np.uint8)
+        res2 = res.copy()
+        labels = tissue_slic.get_slice(i)
+        label_on_image(res2, labels, randSeed=10)
+
+        axis[0,0].imshow(tissue_vol.get_slice(i))
+        axis[0,1].imshow(nuclei_vol.get_slice(i))
+        axis[1,0].imshow(glandular_region.get_slice(i))
+        axis[1,1].imshow(res2)
+        plt.show()
+
+    return
+
+    #tissue_slic.remove_small_holes()
+    #tissue_slic.remove_small_objects(250)
+    #tissue_slic.relabel()
+
+    #mind, maxd, minr, maxr, minc, maxc=100, 1500, 50, 150, 50, 150
+    #tissue_slic.visualize(minr=minr, maxr=maxr, minc=minc, maxc=maxc, mind=mind, maxd=maxd, showFlag=True)
+    #nuclei_bw.visualize(minr=minr, maxr=maxr, minc=minc, maxc=maxc, mind=mind, maxd=maxd, showFlag=True, color=(0,1,0),transparent=True)
     #video_path = os.path.join(opt.output_path, sample_name)
     #os.makedirs(video_path)
     #save_volume_rendering_as_gif(video_path, sample_name)
-    return
+    #return
 
-    nuclei_vol.normalize()
-    tissue_vol.normalize()
-    out = cv2.VideoWriter(os.path.join(opt.output_path, sample_name+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+ '_3.avi'), cv2.VideoWriter_fourcc('M','J','P','G'), fps=5, frameSize=(nuclei_vol.get_width()*3, nuclei_vol.get_height()))
+    out = cv2.VideoWriter(os.path.join(opt.output_path, sample_name+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+ '.avi'), cv2.VideoWriter_fourcc('M','J','P','G'), fps=5, frameSize=(nuclei_vol.get_width()*3, nuclei_vol.get_height()))
     for i in range(0, nuclei_vol.get_depth(), 2):
         cyt = tissue_vol.get_slice(i)
         cyt3 = np.dstack((cyt, cyt, cyt)).astype(np.uint8)
@@ -85,34 +109,26 @@ def main(sample_name):
         nuclei3 = np.dstack((nuclei, nuclei, nuclei)).astype(np.uint8)
         res = np.dstack((nuclei, cyt, nuclei)).astype(np.uint8)
 
-        bw = nuclei_bw.get_slice(i)
+        #bw = nuclei_bw.get_slice(i)
+        #bw = find_edge(bw, strel=3)
+        #bw_on_image(res, bw, (0, 255, 255))
+
         bw2 = tissue_mask.get_slice(i)
-        #bw3 = gland_bw.get_slice(i)
-
-        bw = find_edge(bw, strel=3)
         bw2 = find_edge(bw2, strel=3)
-        #bw3 = find_edge(bw3, strel=3)
-
-        bw_on_image(res, bw, (0, 255, 255))
         bw_on_image(res, bw2, (255, 0, 0))
-        #bw_on_image(res, bw3, (255, 255, 0))
 
-        #img = cv2.putText(img=img, text=f"{i}", org=(10, 10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=1, color=(255,0,0), thickness=1)
+        bw3 = tissue_slic.get_slice(i)>0
+        #bw3 = find_edge(bw3, strel=3)
+        bw_on_image(res, bw3, (255, 255, 0))
+        #label_on_image(res, tissue_slic.get_slice(i), randSeed=0)
 
-        for r in range(1, tissue_slic.get_height()-1):
-            for c in range(1, tissue_slic.get_width()-1):
-                l = tissue_slic.get_voxel(r, c, i)
-                if l != tissue_slic.get_voxel(r,c-1,i) or l != tissue_slic.get_voxel(r,c+1,i) or l != tissue_slic.get_voxel(r-1,c,i) or l != tissue_slic.get_voxel(r+1,c,i):
-                    res[r,c,0] = 0
-                    res[r,c,1] = 0
-                    res[r,c,2] = 255
+        res = cv2.putText(img=res, text=f"{i}", org=(10, 10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=1, color=(255,0,0), thickness=1)
 
         img = np.hstack((cyt3, nuclei3, res))
-        '''print(i)
-        fig, ax = plt.subplots(nrows=1, ncols=2, sharey=True)
-        ax[0].imshow(img)
-        ax[1].imshow(cyt)
-        plt.show()'''
+        if i % 1000 == -1:
+            print(i)
+            plt.imshow(img)
+            plt.show()
         out.write(img)
     out.release()
 

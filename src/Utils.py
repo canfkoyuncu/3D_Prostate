@@ -1,12 +1,16 @@
+import cv2
 import numpy as np
+import random
+from skimage.color import label2rgb
+from sklearn.cluster import KMeans
 from scipy.spatial.qhull import ConvexHull
 from skimage import morphology
-from skimage.filters import threshold_otsu
-from skimage.measure import marching_cubes_lewiner
+from skimage.filters import threshold_otsu, threshold_triangle, threshold_yen
+from skimage.measure import marching_cubes_lewiner, regionprops
 from skimage.morphology import remove_small_objects, remove_small_holes
 from scipy.ndimage import distance_transform_edt, binary_erosion, binary_fill_holes
 from scipy.ndimage import label, generate_binary_structure
-
+import matplotlib.pyplot as plt
 
 stain_mtx = np.array([[0.6443186,  0.09283127, 0.63595447], [0.71667568, 0.95454569, 0.], [0.26688857, 0.28323998, 0.77172658]])
 
@@ -16,6 +20,32 @@ def bw_on_image(im, bw, color):
         t = im[:, :, i]
         t[bw] = color[i]
         im[:, :, i] = t
+
+
+def label_on_image(im, labelIm, M=None, inPlace=True, randSeed=None):
+    if not inPlace:
+        im2 = im.copy()
+        label_on_image(im2, labelIm, M, True)
+        return im2
+    else:
+        max_label = np.max(labelIm)
+        if M is None:
+            if randSeed is not None:
+                random.seed(randSeed)
+            M = np.random.randint(0, 255, (max_label+1, 3))
+
+        if max_label == 0:
+            return
+        elif max_label == 1:
+            bw_on_image(im, labelIm == max_label, M[1, :])
+        else:
+            for r in range(1, im.shape[0]-1):
+                for c in range(1, im.shape[1]-1):
+                    l = labelIm[r, c]
+                    if l > 0 and (l != labelIm[r,c-1] or l != labelIm[r,c+1] or l != labelIm[r-1,c] or l != labelIm[r+1,c]):
+                        im[r,c,0] = M[l, 0]
+                        im[r,c,1] = M[l, 1]
+                        im[r,c,2] = M[l, 2]
 
 
 def find_edge(bw, strel=5):
@@ -52,15 +82,28 @@ def color_deconvolution(img):
     return A
 
 
-def threshold(im, const=-1, reverseFlag=False):
+def calculate_threshold_automatically(im, threshold_func):
+    if threshold_func == 'Otsu':
+        thresh = np.max([5.0, threshold_otsu(im)])
+    elif threshold_func == 'Triangle':
+        thresh = threshold_triangle(im)
+    elif threshold_func == 'Yen':
+        thresh = threshold_yen(im)
+    else:
+        print("Unsupported threshold method! Returning 0.5...")
+        thresh = 0.5
+    return thresh
+
+
+def threshold(im, const=-1, reverseFlag=False, threshold_func='Otsu'):
     if im is not None:
         if const == -1:
-            thresh = otsu(im)
+            thresh = calculate_threshold_automatically(im, threshold_func)
         else:
-            if isinstance(const, int):
+            if isinstance(const, np.integer):
                 thresh = const
             else:
-                thresh = otsu(im) * const
+                thresh = calculate_threshold_automatically(im, threshold_func) * const
         if reverseFlag:
             im = im <= thresh
         else:
@@ -81,13 +124,17 @@ def otsu(im):
 def eliminate_small_area(bw, th, in_place=False):
     if in_place:
         remove_small_objects(bw, th, in_place=in_place)
-        # remove_small_holes(bw, th, in_place=in_place) #this function always returns bool array
+    else:
+        return remove_small_objects(bw, th, in_place=in_place)
+
+
+def eliminate_small_holes(bw, in_place=False):
+    if in_place:
+        remove_small_holes(bw, in_place=in_place)
         return None
     else:
-        bw = remove_small_objects(bw, th, in_place=in_place)
-        bw = remove_small_holes(bw, th, in_place=in_place)
+        bw = remove_small_holes(bw, in_place=in_place)
         return bw
-
 
 def bw_close(im, strel, iter=1):
     pad_length = strel*2
@@ -120,6 +167,7 @@ def bw_erode(im, strel):
 def create_mesh(data, spacing=(1,1,1)):
     return marching_cubes_lewiner(data, spacing=spacing)
 
+
 def convexhull_volume(data, offset=10):
     points = np.ndarray(shape=(0,3), dtype=int)
     for i in range(0, data.shape[0], offset):
@@ -132,5 +180,38 @@ def convexhull_volume(data, offset=10):
     return hull
 
 
-def label_volume(data):
-    return label(data)
+'''nuclei_vol.normalize()
+    tissue_vol.normalize()
+    indices = [0, 800]
+    kmeansOTLS_slices(tissue_vol.get_slices(indices), nuclei_vol.get_slices(indices), k=5)
+    return 0'''
+def kmeansOTLS_slices(nuclei, cytoplasm, k=3):
+    he, wi, de = nuclei.shape
+    nucleir = nuclei.ravel()
+    cytoplasmr = cytoplasm.ravel()
+    data = np.vstack((nucleir, cytoplasmr)).T
+    print(data.shape)
+    kmeans = KMeans(n_clusters=k, random_state=0).fit(data)
+    # Plot whitened data and cluster centers in red
+    plt.scatter(data[:, 0], data[:, 1])
+    plt.scatter(kmeans.cluster_centers_[:,0], kmeans.cluster_centers_[:, 1], c='r')
+    plt.show()
+
+    labels = kmeans.labels_
+    labels = np.reshape(labels, (he, wi, de))
+    for i in range(0, de):
+        nuc = nuclei[:,:,i]
+        cyt = cytoplasm[:,:,i]
+        res = np.dstack((nuc, cyt, nuc)).astype(np.uint8)
+        label_on_image(res, labels[:,:,i], randSeed=30)
+        plt.imshow(res)
+        plt.show()
+
+
+def print_label_on_image(res, labelIm):
+    res = label_on_image(res, labelIm, inPlace=False)
+    props = regionprops(labelIm)
+    for region in props:
+        res = cv2.putText(img=res, text=f"{region.label}", org=(int(region.centroid[0]), int(region.centroid[1])), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=1, color=(255,0,0), thickness=1)
+    plt.imshow(res)
+    plt.show()
