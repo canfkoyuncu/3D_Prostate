@@ -34,7 +34,7 @@ def get_volume_fts(objects):
 
 
 def eliminate_objects_in_background(objects, tissue):
-    step = 2
+    step = 1
     onTissueVoxels = np.zeros((objects.max_label()+1, 1), dtype=np.float)
     volumes = np.zeros_like(onTissueVoxels)
     for i in range(0, objects.get_height(), step):
@@ -61,21 +61,21 @@ def eliminate_objects_in_background(objects, tissue):
         for j in range(0, objects.get_width()):
             for k in range(0, objects.get_depth()):
                 label = objects.get_voxel(i,j,k)
-                if label > 0 and onTissueVoxels[label] / volumes[label] < 0.5:
+                if label > 0 and onTissueVoxels[label] / volumes[label] < 0.25:
                     objects.set_voxel(i,j,k,0)
 
 
 def load_volume_from_h5(filename, downsample_level, isNuclei, outname):
         if os.path.exists(outname + '.npy'):
             print("File exists. Loading..")
-            volume = np.load(outname + '.npy')
+            return load_volume_from_np(outname)
         else:
             file = h5py.File(filename, 'r')
             depth = len(file['t00000/s00/' + downsample_level + '/cells'])
             height = file['t00000/s00/' + downsample_level + '/cells'][0].shape[0]
             width = file['t00000/s00/' + downsample_level + '/cells'][0].shape[1]
             volume = np.zeros((height, width, depth))
-            for i in range(0, depth):
+            for i in range(0, 750):#depth):
                 if isNuclei:
                     volume[:,:,i] = file['t00000/s00/' + downsample_level + '/cells'][i]
                 else:
@@ -87,13 +87,12 @@ def load_volume_from_h5(filename, downsample_level, isNuclei, outname):
                     np.save(outname + '.npy', volume)
 
             np.save(outname + '.npy', volume)
-
-        volume = volume[:, :, 0:1500]
-        return Volume(volume)
+            volume = volume[:, :, 100:750]
+            return Volume(volume)
 
 
 def load_volume_from_np(filename):
-    volume = np.load(filename+'.npy')[:,:,0:1500]
+    volume = np.load(filename+'.npy')#[:,:,100:750]
     return Volume(volume)
 
 

@@ -42,7 +42,8 @@ def label_on_image(im, labelIm, M=None, inPlace=True, randSeed=None):
             for r in range(1, im.shape[0]-1):
                 for c in range(1, im.shape[1]-1):
                     l = labelIm[r, c]
-                    if l > 0 and (l != labelIm[r,c-1] or l != labelIm[r,c+1] or l != labelIm[r-1,c] or l != labelIm[r+1,c]):
+                    #if l > 0 and (l != labelIm[r,c-1] or l != labelIm[r,c+1] or l != labelIm[r-1,c] or l != labelIm[r+1,c]):
+                    if l > 0:
                         im[r,c,0] = M[l, 0]
                         im[r,c,1] = M[l, 1]
                         im[r,c,2] = M[l, 2]
@@ -83,15 +84,18 @@ def color_deconvolution(img):
 
 
 def calculate_threshold_automatically(im, threshold_func):
-    if threshold_func == 'Otsu':
-        thresh = np.max([5.0, threshold_otsu(im)])
-    elif threshold_func == 'Triangle':
-        thresh = threshold_triangle(im)
-    elif threshold_func == 'Yen':
-        thresh = threshold_yen(im)
-    else:
-        print("Unsupported threshold method! Returning 0.5...")
-        thresh = 0.5
+    try:
+        if threshold_func == 'Otsu':
+            thresh = np.max([5.0, threshold_otsu(im)])
+        elif threshold_func == 'Triangle':
+            thresh = threshold_triangle(im)
+        elif threshold_func == 'Yen':
+            thresh = threshold_yen(im)
+        else:
+            print("Unsupported threshold method! Returning 5.0...")
+            thresh = 5.
+    except:
+        thresh = 5.0
     return thresh
 
 

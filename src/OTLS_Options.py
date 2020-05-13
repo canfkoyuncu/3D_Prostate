@@ -8,7 +8,7 @@ class OTLS_Options():
 
     def initialize(self):
         self.parser.add_argument('--data_path', type=str, default='/Volumes/data/University of Washington_3D_Prostate_Path/', help='path to data')
-        self.parser.add_argument('--sample_names', type=str, default='S025_hb_B,S025_hb_C,S025_hb_D,S025_hb_E,S025_hb_F,S025_hb_A')
+        self.parser.add_argument('--sample_names', type=str, default='S025_hb_B')
         self.parser.add_argument('--downsample_level', type=str, default='1')
         self.parser.add_argument('--prem_data_path', type=str, default='../prem_results/')
         self.parser.add_argument('--output_path', type=str, default='../output/')

@@ -6,11 +6,14 @@ import os
 
 import matplotlib
 import numpy as np
+from matplotlib.colors import LinearSegmentedColormap
+from skimage.color import rgb2hed
+from skimage.exposure import rescale_intensity
 from skimage.filters import try_all_threshold
 
 from src.OTLS_Options import OTLS_Options
 from src.Utils import bw_on_image, find_edge, label_on_image, kmeansOTLS_slices, print_label_on_image, \
-    calculate_threshold_automatically, threshold
+    calculate_threshold_automatically, threshold, color_deconvolution
 import matplotlib.pyplot as plt
 
 from mpl_toolkits.mplot3d import axes3d, Axes3D
@@ -39,38 +42,41 @@ def main(sample_name):
 
     nuclei_bw = nuclei_vol.binarizeSliceBySlice(threshold_func='Otsu', inplace=False)
     nuclei_bw.label()
-    nuclei_bw.remove_small_objects(2000)
+    nuclei_bw.remove_small_objects(10000)
     nuclei_bw.binarize(0)
 
-    tissue_mask = nuclei_bw.get_convexhull(inplace=False)
-    tissue_mask.save_volume(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'_CHull'))
+    #tissue_mask = nuclei_bw.get_convexhull(inplace=False)
+    #tissue_mask.save_volume(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'_CHull'))
     tissue_mask = load_volume_from_np(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'_CHull'))
+    print("Tissue mask size:", tissue_mask.get_volume().shape)
     print("Tissue mask data has been loaded.")
 
-    tissue_slic = tissue_vol.copy()
-    tissue_slic.slic(opt.slic_no, opt.slic_compactness)
-    tissue_slic.save_volume(os.path.join(opt.output_path, sample_name+'_'+opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)))
-    tissue_slic = load_volume_from_np(os.path.join(opt.output_path, sample_name+'_'+opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)))
+    #tissue_slic = tissue_vol.copy()
+    #tissue_slic.slic(opt.slic_no, opt.slic_compactness)
+    #tissue_slic.save_volume(os.path.join(opt.output_path, sample_name+'_'+opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)))
+    #tissue_slic = load_volume_from_np(os.path.join(opt.output_path, sample_name+'_'+opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)))
     print("Tissue slic data has been loaded.")
 
-    glandular_region = tissue_vol.binarizeSliceBySlice(th=0.8, bgFlag=True, threshold_func='Otsu', inplace=False)
-    remove_background(glandular_region, tissue_mask)
+    #glandular_region = tissue_vol.binarizeSliceBySlice(th=1.0, bgFlag=True, threshold_func='Otsu', inplace=False)
+    #remove_background(glandular_region, tissue_mask)
     print("Gland data has been loaded.")
 
     #eliminate_objects_in_background(tissue_slic, glandular_region)
     #tissue_slic.save_volume(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_Glands'))
-    #tissue_slic = load_volume_from_np(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_Glands'))
-    #print('Cyto tissue regions eliminated')
+    tissue_slic = load_volume_from_np(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_Glands'))
+    print('Cyto tissue regions eliminated')
 
-    #eliminate_objects_cell_surrounding(tissue_slic, nuclei_bw, th=0.5)
+    #add_touching_cells(tissue_slic, nuclei_bw)
+    #print('Cells are added')
+
+    eliminate_objects_cell_surrounding(tissue_slic, nuclei_bw, th=0.5)
     #tissue_slic.save_volume(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_Glands2'))
     #tissue_slic = load_volume_from_np(os.path.join(opt.output_path, sample_name + '_' + opt.downsample_level+'slic'+str(opt.slic_no)+'_'+str(opt.slic_compactness)+'_Glands2'))
     #print('Non-glandular regions eliminated')
 
-    #tissue_slic.median_filter((1,1,5))
-    #add_touching_cells(tissue_slic, nuclei_bw)
+    tissue_slic.median_filter((1,1,5))
 
-    for i in [100, 250, 500, 1000, 1250, 2000, 2500]:
+    '''for i in [100, 250, 500, 645]:#1000, 1250, 2000, 2500]:
         fig, axis = plt.subplots(nrows=2, ncols=2)
 
         cyt = tissue_vol.get_slice(i)
@@ -86,7 +92,7 @@ def main(sample_name):
         axis[1,1].imshow(res2)
         plt.show()
 
-    return
+    return'''
 
     #tissue_slic.remove_small_holes()
     #tissue_slic.remove_small_objects(250)
@@ -132,8 +138,30 @@ def main(sample_name):
         out.write(img)
     out.release()
 
+import imageio as io
+def try_stain_deconv():
+    #im = io.imread('/Volumes/data/University of Washington_3D_Prostate_Path/Annotations/18-040_n2_Z000989_annotated.tif')
+    #im = im[:, 500:1000]
+    #io.imwrite('deneme.png', im)
+    im = io.imread('deneme.png')
+    im = im[1200:1700,:,:]
+
+    #deconv = color_deconvolution(im.astype(np.float))
+    deconv = rgb2hed(im)
+
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharex=True, sharey=True)
+    ax = axes.ravel()
+    ax[0].imshow(im)
+    ax[1].imshow(deconv[:, :, 0], cmap='gray')
+    ax[2].imshow(deconv[:, :, 1], cmap='gray')
+    ax[3].imshow(deconv[:, :, 2], cmap='gray')
+
+    fig.tight_layout()
+    plt.show()
 
 if __name__ == "__main__":
+    try_stain_deconv()
+    exit(0)
     opt = OTLS_Options().parse()
     sample_names = opt.sample_names.split(',')
     for sample_name in sample_names:
