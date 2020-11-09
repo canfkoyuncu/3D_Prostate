@@ -16,7 +16,7 @@ neighbors3d = [[0, -1, 0], [-1, 0, 0], [0, 0, -1], [-1, -1, 0], [-1, 0, -1], [0,
                [-1, 1, 0], [-1, 1, 1], [-1, 0, 1], [-1, -1, 1], [-1, 1, -1], [0, 0, 0]]
 
 
-from src.VolumeObject import Volume
+from src.Volume import Volume
 
 
 def get_volume_fts(objects):
